@@ -31,3 +31,103 @@ const inngestFunctions: InngestFunction.Any[] = [];
 
 // Create a middleware for Inngest to be able to route triggers to Mastra directly.
 export function registerApiRoute<P extends string>(
+  ...args: Parameters<typeof originalRegisterApiRoute<P>>
+): ReturnType<typeof originalRegisterApiRoute<P>> {
+  const [path, options] = args;
+  if (path.startsWith("/api/") || typeof options !== "object") {
+    // This will throw an error.
+    return originalRegisterApiRoute(...args);
+  }
+  inngestFunctions.push(
+    inngest.createFunction(
+      {
+        id: `api-${path.replace(/^\/+/, "").replaceAll(/\/+/g, "-")}`,
+        name: path,
+      },
+      {
+        event: `event/api.${path.replace(/^\/+/, "").replaceAll(/\/+/g, ".")}`,
+      },
+      async ({ event, step }) => {
+        await step.run("forward request to Mastra", async () => {
+          // It is hard to obtain an internal handle on the Hono server,
+          // so we just forward the request to the local Mastra server.
+          const response = await fetch(`http://localhost:5000${path}`, {
+            method: event.data.method,
+            headers: event.data.headers,
+            body: event.data.body,
+          });
+
+          if (!response.ok) {
+            if (
+              (response.status >= 500 && response.status < 600) ||
+              response.status == 429 ||
+              response.status == 408
+            ) {
+              // 5XX, 429 (Rate-Limit Exceeded), 408 (Request Timeout) are retriable.
+              throw new Error(
+                `Failed to forward request to Mastra: ${response.statusText}`,
+              );
+            } else {
+              // All other errors are non-retriable.
+              throw new NonRetriableError(
+                `Failed to forward request to Mastra: ${response.statusText}`,
+              );
+            }
+          }
+        });
+      },
+    ),
+  );
+
+  return originalRegisterApiRoute(...args);
+}
+
+export function registerCronWorkflow(cronExpression: string, workflow: any) {
+  const f = inngest.createFunction(
+    { id: "cron-trigger" },
+    [{ event: "replit/cron.trigger" }, { cron: cronExpression }],
+    async ({ event, step }) => {
+      const run = await workflow.createRunAsync();
+      const result = await run.start({ inputData: {} });
+      return result;
+    },
+  );
+  inngestFunctions.push(f);
+}
+
+export function inngestServe({
+  mastra,
+  inngest,
+}: {
+  mastra: Mastra;
+  inngest: Inngest;
+}): ReturnType<typeof originalInngestServe> {
+  const wfs = mastra.getWorkflows();
+
+  const functions = new Set<InngestFunction.Any>();
+  for (const wf of Object.values(wfs)) {
+    if (!(wf instanceof InngestWorkflow)) {
+      continue;
+    }
+    wf.__registerMastra(mastra);
+    for (const f of wf.getFunctions()) {
+      functions.add(f);
+    }
+  }
+  for (const fn of inngestFunctions) {
+    functions.add(fn);
+  }
+  let serveHost: string | undefined = undefined;
+  if (process.env.NODE_ENV === "production") {
+    if (process.env.REPLIT_DOMAINS) {
+      serveHost = `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`;
+    }
+  } else {
+    serveHost = "http://localhost:5000";
+  }
+  return originalInngestServe({
+    client: inngest,
+    functions: Array.from(functions),
+    serveHost,
+  });
+}
