@@ -7,15 +7,16 @@ import { MCPServer } from "@mastra/mcp";
 import { NonRetriableError } from "inngest";
 import { z } from "zod";
 
+// Local files
 import { sharedPostgresStorage } from "./storage";
 import { inngest, inngestServe } from "./inngest";
 
-// Import chess assistant components
+// Chess assistant components
 import { chessAssistantAgent } from "./agents/chessAgent";
 import { chessAssistantWorkflow } from "./workflows/chessAssistantWorkflow";
-import { registerTelegramTrigger } from "../triggers/telegramTriggers";
+import { registerTelegramTrigger } from "./triggers/telegramTriggers";
 
-// Import chess tools for MCP server
+// Chess tools for MCP server
 import { chessBoardTool } from "./tools/chessBoardTool";
 import { stockfishTool } from "./tools/stockfishTool";
 import { telegramButtonsTool } from "./tools/telegramButtonsTool";
@@ -25,12 +26,7 @@ import { chessGameFlowTool } from "./tools/chessGameFlowTool";
 class ProductionPinoLogger extends MastraLogger {
   protected logger: pino.Logger;
 
-  constructor(
-    options: {
-      name?: string;
-      level?: LogLevel;
-    } = {},
-  ) {
+  constructor(options: { name?: string; level?: LogLevel } = {}) {
     super(options);
 
     this.logger = pino({
@@ -38,11 +34,9 @@ class ProductionPinoLogger extends MastraLogger {
       level: options.level || LogLevel.INFO,
       base: {},
       formatters: {
-        level: (label: string, _number: number) => ({
-          level: label,
-        }),
+        level: (label: string) => ({ level: label }),
       },
-      timestamp: () => `,"time":"${new Date(Date.now()).toISOString()}"`,
+      timestamp: () => `,"time":"${new Date().toISOString()}"`,
     });
   }
 
@@ -65,11 +59,11 @@ class ProductionPinoLogger extends MastraLogger {
 
 export const mastra = new Mastra({
   storage: sharedPostgresStorage,
-  agents: { 
-    chessAssistant: chessAssistantAgent 
+  agents: {
+    chessAssistant: chessAssistantAgent,
   },
-  workflows: { 
-    chessAssistantWorkflow 
+  workflows: {
+    chessAssistantWorkflow,
   },
   mcpServers: {
     allTools: new MCPServer({
@@ -85,17 +79,7 @@ export const mastra = new Mastra({
     }),
   },
   bundler: {
-    // A few dependencies are not properly picked up by
-    // the bundler if they are not added directly to the
-    // entrypoint.
-    externals: [
-      "@slack/web-api",
-      "inngest",
-      "inngest/hono",
-      "hono",
-      "hono/streaming",
-    ],
-    // sourcemaps are good for debugging.
+    externals: ["@slack/web-api", "inngest", "inngest/hono", "hono", "hono/streaming"],
     sourcemap: true,
   },
   server: {
@@ -109,42 +93,22 @@ export const mastra = new Mastra({
         try {
           await next();
         } catch (error) {
-          logger?.error("[Response]", {
-            method: c.req.method,
-            url: c.req.url,
-            error,
-          });
-          if (error instanceof MastraError) {
-            if (error.id === "AGENT_MEMORY_MISSING_RESOURCE_ID") {
-              // This is typically a non-retirable error. It means that the request was not
-              // setup correctly to pass in the necessary parameters.
-              throw new NonRetriableError(error.message, { cause: error });
-            }
+          logger?.error("[Response]", { method: c.req.method, url: c.req.url, error });
+          if (error instanceof MastraError && error.id === "AGENT_MEMORY_MISSING_RESOURCE_ID") {
+            throw new NonRetriableError(error.message, { cause: error });
           } else if (error instanceof z.ZodError) {
-            // Validation errors are never retriable.
             throw new NonRetriableError(error.message, { cause: error });
           }
-
           throw error;
         }
       },
     ],
     apiRoutes: [
-      // This API route is used to register the Mastra workflow (inngest function) on the inngest server
       {
         path: "/api/inngest",
         method: "ALL",
         createHandler: async ({ mastra }) => inngestServe({ mastra, inngest }),
-        // The inngestServe function integrates Mastra workflows with Inngest by:
-        // 1. Creating Inngest functions for each workflow with unique IDs (workflow.${workflowId})
-        // 2. Setting up event handlers that:
-        //    - Generate unique run IDs for each workflow execution
-        //    - Create an InngestExecutionEngine to manage step execution
-        //    - Handle workflow state persistence and real-time updates
-        // 3. Establishing a publish-subscribe system for real-time monitoring
-        //    through the workflow:${workflowId}:${runId} channel
       },
-      // Telegram webhook trigger for chess assistant
       ...registerTelegramTrigger({
         triggerType: "telegram/message",
         handler: async (mastra: Mastra, triggerInfo: any) => {
@@ -156,7 +120,7 @@ export const mastra = new Mastra({
             inputData: {
               message: JSON.stringify(triggerInfo.payload),
               threadId: `telegram/${triggerInfo.payload.message?.from?.id || triggerInfo.payload.callback_query?.from?.id}`,
-            }
+            },
           });
         },
       }),
@@ -164,28 +128,13 @@ export const mastra = new Mastra({
   },
   logger:
     process.env.NODE_ENV === "production"
-      ? new ProductionPinoLogger({
-          name: "Mastra",
-          level: "info",
-        })
-      : new PinoLogger({
-          name: "Mastra",
-          level: "info",
-        }),
+      ? new ProductionPinoLogger({ name: "Mastra", level: "info" })
+      : new PinoLogger({ name: "Mastra", level: "info" }),
 });
 
-/*  Sanity check 1: Throw an error if there are more than 1 workflows.  */
-// !!!!!! Do not remove this check. !!!!!!
-if (Object.keys(mastra.getWorkflows()).length > 1) {
-  throw new Error(
-    "More than 1 workflows found. Currently, more than 1 workflows are not supported in the UI, since doing so will cause app state to be inconsistent.",
-  );
-}
+/* Sanity checks */
+if (Object.keys(mastra.getWorkflows()).length > 1)
+  throw new Error("More than 1 workflows found. Currently not supported in the UI.");
 
-/*  Sanity check 2: Throw an error if there are more than 1 agents.  */
-// !!!!!! Do not remove this check. !!!!!!
-if (Object.keys(mastra.getAgents()).length > 1) {
-  throw new Error(
-    "More than 1 agents found. Currently, more than 1 agents are not supported in the UI, since doing so will cause app state to be inconsistent.",
-  );
-}
+if (Object.keys(mastra.getAgents()).length > 1)
+  throw new Error("More than 1 agents found. Currently not supported in the UI.");
