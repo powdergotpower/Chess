@@ -13,8 +13,8 @@ import { inngest, inngestServe } from "./inngest";
 
 // Chess assistant components
 import { chessAssistantAgent } from "./agents/chessAgent";
-import { chessAssistantWorkflow } from "./workflows/chessAssistantWorkflow";
-import { registerTelegramTrigger } from "./triggers/telegramTriggers";
+import { chessAssistantWorkflow } from "./workflow/chessAssistantWorkflow"; // corrected path
+import { registerTelegramTrigger } from "./triggers/telegramTriggers";       // corrected path
 
 // Chess tools for MCP server
 import { chessBoardTool } from "./tools/chessBoardTool";
@@ -28,14 +28,11 @@ class ProductionPinoLogger extends MastraLogger {
 
   constructor(options: { name?: string; level?: LogLevel } = {}) {
     super(options);
-
     this.logger = pino({
       name: options.name || "app",
       level: options.level || LogLevel.INFO,
       base: {},
-      formatters: {
-        level: (label: string) => ({ level: label }),
-      },
+      formatters: { level: (label: string) => ({ level: label }) },
       timestamp: () => `,"time":"${new Date().toISOString()}"`,
     });
   }
@@ -43,15 +40,12 @@ class ProductionPinoLogger extends MastraLogger {
   debug(message: string, args: Record<string, any> = {}): void {
     this.logger.debug(args, message);
   }
-
   info(message: string, args: Record<string, any> = {}): void {
     this.logger.info(args, message);
   }
-
   warn(message: string, args: Record<string, any> = {}): void {
     this.logger.warn(args, message);
   }
-
   error(message: string, args: Record<string, any> = {}): void {
     this.logger.error(args, message);
   }
@@ -59,29 +53,16 @@ class ProductionPinoLogger extends MastraLogger {
 
 export const mastra = new Mastra({
   storage: sharedPostgresStorage,
-  agents: {
-    chessAssistant: chessAssistantAgent,
-  },
-  workflows: {
-    chessAssistantWorkflow,
-  },
+  agents: { chessAssistant: chessAssistantAgent },
+  workflows: { chessAssistantWorkflow },
   mcpServers: {
     allTools: new MCPServer({
       name: "allTools",
       version: "1.0.0",
-      tools: {
-        chessBoardTool,
-        stockfishTool,
-        telegramButtonsTool,
-        telegramMessageTool,
-        chessGameFlowTool,
-      },
+      tools: { chessBoardTool, stockfishTool, telegramButtonsTool, telegramMessageTool, chessGameFlowTool },
     }),
   },
-  bundler: {
-    externals: ["@slack/web-api", "inngest", "inngest/hono", "hono", "hono/streaming"],
-    sourcemap: true,
-  },
+  bundler: { externals: ["@slack/web-api", "inngest", "inngest/hono", "hono", "hono/streaming"], sourcemap: true },
   server: {
     host: "0.0.0.0",
     port: 5000,
@@ -104,11 +85,7 @@ export const mastra = new Mastra({
       },
     ],
     apiRoutes: [
-      {
-        path: "/api/inngest",
-        method: "ALL",
-        createHandler: async ({ mastra }) => inngestServe({ mastra, inngest }),
-      },
+      { path: "/api/inngest", method: "ALL", createHandler: async ({ mastra }) => inngestServe({ mastra, inngest }) },
       ...registerTelegramTrigger({
         triggerType: "telegram/message",
         handler: async (mastra: Mastra, triggerInfo: any) => {
@@ -135,6 +112,5 @@ export const mastra = new Mastra({
 /* Sanity checks */
 if (Object.keys(mastra.getWorkflows()).length > 1)
   throw new Error("More than 1 workflows found. Currently not supported in the UI.");
-
 if (Object.keys(mastra.getAgents()).length > 1)
   throw new Error("More than 1 agents found. Currently not supported in the UI.");
