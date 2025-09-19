@@ -253,3 +253,23 @@ class ChessAssistantBot {
             [
               { text: "🤖 Get Suggestion", callback_data: "analysis" },
               { text: "↩️ Undo Move", callback_data: "undo" },
+ { text: "🏠 Main Menu", callback_data: "initialize" }
+          ]
+        ]
+      };
+    }
+
+    return {
+      replyText: "I didn't understand that command. Here are your options:",
+      inlineKeyboard: [
+        [
+          { text: "♟️ New Game", callback_data: "initialize" },
+          { text: "🤖 Analysis", callback_data: "analysis" }
+        ],
+        [
+          { text: "📚 Help", callback_data: "help" },
+          { text: "🧩 Puzzles", callback_data: "puzzles" }
+        ]
+      ]
+    };
+    }
