@@ -1,7 +1,13 @@
 import logging
 import os
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
 from board_handler import recognize_board
 from engine import get_best_move
 
@@ -15,23 +21,23 @@ logger = logging.getLogger(__name__)
 user_data = {}
 
 # /start command
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text(
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
         "Welcome to Chess Bot! Please upload a picture of your chessboard."
     )
 
 # Handle uploaded images
-def handle_photo(update: Update, context: CallbackContext):
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
 
     if not update.message.photo:
-        update.message.reply_text("Please upload a valid chessboard image.")
+        await update.message.reply_text("Please upload a valid chessboard image.")
         return
 
     # Download image
-    photo_file = update.message.photo[-1].get_file()
+    photo_file = await update.message.photo[-1].get_file()
     file_path = f"{user_id}_board.jpg"
-    photo_file.download(file_path)
+    await photo_file.download_to_drive(file_path)
 
     # Recognize pieces
     positions = recognize_board(file_path)
@@ -40,20 +46,23 @@ def handle_photo(update: Update, context: CallbackContext):
         "board_positions": positions
     }
 
-    update.message.reply_text("Image received! Board positions detected:\n" + str(positions))
-    update.message.reply_text("Next: Who's turn? (You can implement inline buttons here later.)")
+    await update.message.reply_text(
+        "Image received! Board positions detected:\n" + str(positions)
+    )
+    await update.message.reply_text(
+        "Next: Who's turn? (You can implement inline buttons here later.)"
+    )
 
 # Main function
 def main():
-    TOKEN = "8396269907:AAH9VURRq33VX_E6-_5_QJKMWpG8nPEeDQY"  # replace with your token
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    TOKEN = "8396269907:AAH9VURRq33VX_E6-_5_QJKMWpG8nPEeDQY"  # replace with your bot token
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.photo, handle_photo))
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    updater.start_polling()
-    updater.idle()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
